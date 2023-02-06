@@ -1,4 +1,4 @@
-$def with(settings)
+$def with(settings, addPump)
 
 $var title: $_(u'SIP DB Logger')
 $var page: advance_pump
@@ -6,9 +6,14 @@ $var page: advance_pump
 <script>
     // Initialize behaviors
     jQuery(document).ready(function () {
-        jQuery("button#statButton").click(function () {
-            window.location = "/advdisp";
+		jQuery("button#cSubmit").click(function () {
+			jQuery("#advance-pump-set-save").submit();
         });
+    });
+	jQuery(document).ready(function () {
+		jQuery("button#addNewPump").click(function () {
+			window.location = "./advance-pump-set?AddPumps=1";
+		});
 	});
 </script>
 
@@ -23,55 +28,69 @@ $var page: advance_pump
     <!--     <button class="execute" id="docButton" type="button" >$_('Help')</button> -->
     <!--     </div> -->
     <div>
-        <p>Control your pumps acording to valves states. Same valves need to pump working to have wather</p>
-    </div>
-
-    <div>
-        <form id="advc" name="advc" action="/advu" method="get">
-            Device Type:
-            <select name="deviceType" id="deviceType">
-                <option value="">None</option>
-                <option value="shelly1">Shelly 1</option>
-            </select>
-
-            <br />
-
-            Device IP:
-            <input type="text" size="50" value="" id="coff" name="coff">
-
-            <br />
-
-            Turn on pump if any valve is on: <br /><br />
-
-            $for bid in range(0,gv.sd['nbrd']):
-                $for s in range(0,8):
-                    $ sid = bid*8 + s;
-                    <input type="checkbox" id="valvesNeedPump" name="valvesNeedPump" value="valvesNeedPump${sid}">${gv.snames[sid]}
-
-            <br /><br /><br />
-
-            Valves in on state to turn on pump: <br /><br />
-
-            $for bid in range(0,gv.sd['nbrd']):
-                $for s in range(0,8):
-                    $ sid = bid*8 + s;
-                    <input type="checkbox" id="valvesNeedON" name="valvesNeedON" value="valvesNeedON${sid}">${gv.snames[sid]}
-
-            <br /><br /><br />
-
-            Valves in off state to turn on pump: <br /><br />
-
-            $for bid in range(0,gv.sd['nbrd']):
-                $for s in range(0,8):
-                    $ sid = bid*8 + s;
-                    <input type="checkbox" id="valvesNeedOff" name="valvesNeedOff" value="valvesNeedOff{sid}">${gv.snames[sid]}
-
+        $if addPump == 0:
+            <button id="addNewPump" class="submit"><b>Add More pump</b></button>
             <br /><br />
-        </form>
-    </div>
 
-    <div class="controls">
-        <button id="cSubmit" class="submit"><b>$_(u'Submit')</b></button>
-        <button id="cCancel" class="cancel danger">$_(u'Cancel')</button>
+        <form id="advance-pump-set-save" name="advance-pump-set-save" action="/advance-pump-set-save" method="get">
+            $for pumpId in range(len(settings['PumpName']) + addPump):
+                Pump name:
+                <input type="text" size="50" value="" id="pumpName${pumpId}" name="pumpName${pumpId}">
+
+                <br />
+
+                Device Type:
+                <select name="deviceType${pumpId}" id="deviceType${pumpId}">
+                    <option value="">None</option>
+                    $if pumpId < len(settings['PumpDeviceType']) and settings['PumpDeviceType'][pumpId] == 'shelly1':
+                        <option value="shelly1">Shelly 1</option>
+                    $else:
+                        <option value="shelly1">Shelly 1</option>
+                </select>
+
+                <br />
+
+                Device IP:
+                <input type="text" size="50" value="" id="deviceIP${pumpId}" name="deviceIP${pumpId}">
+
+                <br />
+
+                Keep pump state
+                <input type="checkbox" size="50" value="" id="deviceForceState${pumpId}" name="deviceForceState${pumpId}" checked>
+
+                <br />
+
+                Turn on pump if any valve is on: <br /><br />
+
+                $for bid in range(0,gv.sd['nbrd']):
+                    $for s in range(0,8):
+                        $ sid = bid*8 + s;
+                        <input type="checkbox" id="valvesNeedPump${pumpId}Valve${sid}" name="valvesNeedPump${pumpId}Valve${sid}" value="valvesNeedPump${pumpId}Valve${sid}">${gv.snames[sid]}
+
+                <br /><br /><br />
+
+                Pump turn on if valve are on: <br /><br />
+
+                $for bid in range(0,gv.sd['nbrd']):
+                    $for s in range(0,8):
+                        $ sid = bid*8 + s;
+                        <input type="checkbox" id="valvesNeedPump${pumpId}ON${sid}" name="valvesNeedPump${pumpId}ON${sid}" value="valvesNeedPump${pumpId}ON${sid}">${gv.snames[sid]}
+
+                <br /><br /><br />
+
+                Valves in off state to turn on pump: <br /><br />
+
+                $for bid in range(0,gv.sd['nbrd']):
+                    $for s in range(0,8):
+                        $ sid = bid*8 + s;
+                        <input type="checkbox" id="valvesNeedPump${pumpId}Off${sid}" name="valvesNeedPump${pumpId}Off${sid}" value="valvesNeedPump${pumpId}Off${sid}">${gv.snames[sid]}
+
+                <br /><br />
+        </form>
+
+        <div class="controls">
+            <button id="cSubmit" class="submit"><b>$_(u'Submit')</b></button>
+            <button id="cCancel" class="cancel danger">$_(u'Cancel')</button>
+        </div>
     </div>
 </div>
