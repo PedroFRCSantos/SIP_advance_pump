@@ -85,7 +85,7 @@ def runTreadPump():
     lastPupState = copy.deepcopy(pumpsStateVect)
     mutexAdvPump.release()
 
-    lastTime = datetime.datetime.now()
+    lastTime = datetime.now()
 
     while True:
         sleep(1)
@@ -100,7 +100,7 @@ def runTreadPump():
 
         # for new pupms fix the state
         if len(pumpsStateVect) > len(lastPupState):
-            for newPump in range(pumpsStateVect):
+            for newPump in range(len(pumpsStateVect)):
                 if pumpsStateVect[newPump]:
                     listPups2TurnOn.append(newPump)
                 else:
@@ -128,7 +128,7 @@ def runTreadPump():
                 pupmpAction(localSettings['PumpDeviceType'][pupmpIdOn], localSettings['PumpIP'][pupmpIdOn], True)
 
         # TODO: every 30 seconds force state if needed and check if valves are only
-        nowTime = datetime.datetime.now()
+        nowTime = datetime.now()
         diffTime = nowTime - lastTime
         secondsInt = int(diffTime.seconds)
         if 30 - secondsInt > 0:
@@ -241,9 +241,12 @@ class save_settings(ProtectedPage):
         qdict = web.input()
 
         initialSize = len(settingsAdvancePumpTMP['PumpName'])
+        addNew = 0
+        if "pumpName" + str(initialSize) in qdict:
+            addNew = 1
 
         # Get name of pupms
-        for pumpId in range(initialSize + 1):
+        for pumpId in range(initialSize + addNew):
             if "pumpName" + str(pumpId) in qdict:
                 if pumpId < initialSize:
                     settingsAdvancePumpTMP['PumpName'][pumpId] = qdict["pumpName" + str(pumpId)]
@@ -251,7 +254,7 @@ class save_settings(ProtectedPage):
                     settingsAdvancePumpTMP['PumpName'].append(qdict["pumpName" + str(pumpId)])
 
         # pump device type
-        for pumpId in range(initialSize + 1):
+        for pumpId in range(initialSize + addNew):
             if "deviceType" + str(pumpId) in qdict:
                 if pumpId < initialSize:
                     settingsAdvancePumpTMP['PumpDeviceType'][pumpId] = qdict["deviceType" + str(pumpId)]
@@ -259,7 +262,7 @@ class save_settings(ProtectedPage):
                     settingsAdvancePumpTMP['PumpDeviceType'].append(qdict["deviceType" + str(pumpId)])
 
         # Get pump IP
-        for pumpId in range(initialSize + 1):
+        for pumpId in range(initialSize + addNew):
             if "deviceIP" + str(pumpId) in qdict:
                 if pumpId < initialSize:
                     settingsAdvancePumpTMP['PumpIP'][pumpId] = qdict["deviceIP" + str(pumpId)]
@@ -267,7 +270,7 @@ class save_settings(ProtectedPage):
                     settingsAdvancePumpTMP['PumpIP'].append(qdict["deviceIP" + str(pumpId)])
 
         # check if pupm to keep state
-        for pumpId in range(initialSize + 1):
+        for pumpId in range(initialSize + addNew):
             if pumpId < initialSize:
                 settingsAdvancePumpTMP['PumpKeepState'][pumpId] = "deviceForceState" + str(pumpId) in qdict
             else:
@@ -275,7 +278,7 @@ class save_settings(ProtectedPage):
 
 
         # Get list of valves need of working of pump
-        for pumpId in range(initialSize + 1):
+        for pumpId in range(initialSize + addNew):
             listValves = []
             for bid in range(0,gv.sd['nbrd']):
                 for s in range(0,8):
@@ -291,7 +294,7 @@ class save_settings(ProtectedPage):
                 settingsAdvancePumpTMP['PumpNeedValves'].append(listValves)
 
         # anly allow pump work if valve is on
-        for pumpId in range(initialSize + 1):
+        for pumpId in range(initialSize + addNew):
             listValves = []
             for bid in range(0,gv.sd['nbrd']):
                 for s in range(0,8):
@@ -307,7 +310,7 @@ class save_settings(ProtectedPage):
                 settingsAdvancePumpTMP['PumpNeedValvesOn'].append(listValves)
 
         # anly allow pump work if valve is off
-        for pumpId in range(initialSize + 1):
+        for pumpId in range(initialSize + addNew):
             listValves = []
             for bid in range(0,gv.sd['nbrd']):
                 for s in range(0,8):
@@ -332,7 +335,7 @@ class save_settings(ProtectedPage):
         mutexAdvPump.release()
 
         # save new configuration to file
-        with open(u"./data/advance_control.json", u"w") as f:  # write the settings to file
+        with open(u"./data/advance_pump.json", u"w") as f:  # write the settings to file
             json.dump(settingsAdvancePumpTMP, f, indent=4)
 
         web.seeother(u"/advance-pump-set")  # Return to definition pannel
@@ -344,6 +347,29 @@ class delete_pump(ProtectedPage):
 
     def GET(self):
 
-        # TODO delete pump
+        qdict = web.input()
+
+        pump2Delete = 0
+        if "PumpId" in qdict:
+            pump2Delete = int(qdict["PumpId"])
+
+        mutexAdvPump.acquire()
+        if pump2Delete < len(pumpsStateVect):
+            del pumpsStateVect[pump2Delete]
+
+            del settingsAdvancePump['PumpName'][pump2Delete]
+            del settingsAdvancePump['PumpDeviceType'][pump2Delete]
+            del settingsAdvancePump['PumpIP'][pump2Delete]
+            del settingsAdvancePump['PumpNeedValves'][pump2Delete]
+            del settingsAdvancePump['PumpNeedValvesOn'][pump2Delete]
+            del settingsAdvancePump['PumpNeedValvesOff'][pump2Delete]
+            del settingsAdvancePump['PumpKeepState'][pump2Delete]
+
+            settingsAdvancePumpTMP = copy.deepcopy(settingsAdvancePump)
+        mutexAdvPump.release()
+
+        # save new configuration to file
+        with open(u"./data/advance_pump.json", u"w") as f:  # write the settings to file
+            json.dump(settingsAdvancePumpTMP, f, indent=4)
 
         web.seeother(u"/advance-pump-set")  # Return to definition pannel

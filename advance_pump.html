@@ -34,8 +34,16 @@ $var page: advance_pump
 
         <form id="advance-pump-set-save" name="advance-pump-set-save" action="/advance-pump-set-save" method="get">
             $for pumpId in range(len(settings['PumpName']) + addPump):
+                $if pumpId < len(settings['PumpName']):
+                    ${settings['PumpName'][pumpId]}
+                    <a href="./advance-pump-delete?PumpId=${pumpId}">DELETE</a><br /><br />
+                $else:
+                    New Pump:<br /><br />
                 Pump name:
-                <input type="text" size="50" value="" id="pumpName${pumpId}" name="pumpName${pumpId}">
+                $if pumpId < len(settings['PumpName']):
+                    <input type="text" size="50" id="pumpName${pumpId}" name="pumpName${pumpId}" value="${settings['PumpName'][pumpId]}">
+                $else:
+                    <input type="text" size="50" id="pumpName${pumpId}" name="pumpName${pumpId}">
 
                 <br />
 
@@ -43,7 +51,7 @@ $var page: advance_pump
                 <select name="deviceType${pumpId}" id="deviceType${pumpId}">
                     <option value="">None</option>
                     $if pumpId < len(settings['PumpDeviceType']) and settings['PumpDeviceType'][pumpId] == 'shelly1':
-                        <option value="shelly1">Shelly 1</option>
+                        <option value="shelly1" selected="selected">Shelly 1</option>
                     $else:
                         <option value="shelly1">Shelly 1</option>
                 </select>
@@ -51,12 +59,18 @@ $var page: advance_pump
                 <br />
 
                 Device IP:
-                <input type="text" size="50" value="" id="deviceIP${pumpId}" name="deviceIP${pumpId}">
+                $if pumpId < len(settings['PumpName']):
+                    <input type="text" size="50" value="${settings['PumpIP'][pumpId]}" id="deviceIP${pumpId}" name="deviceIP${pumpId}">
+                $else:
+                    <input type="text" size="50" value="" id="deviceIP${pumpId}" name="deviceIP${pumpId}">
 
                 <br />
 
                 Keep pump state
-                <input type="checkbox" size="50" value="" id="deviceForceState${pumpId}" name="deviceForceState${pumpId}" checked>
+                $if pumpId < len(settings['PumpName']):
+                    <input type="checkbox" size="50" value="" id="deviceForceState${pumpId}" name="deviceForceState${pumpId}" ${"checked" if settings[u"PumpKeepState"][pumpId] else "" }>
+                $else:
+                    <input type="checkbox" size="50" value="" id="deviceForceState${pumpId}" name="deviceForceState${pumpId}">
 
                 <br />
 
@@ -65,7 +79,10 @@ $var page: advance_pump
                 $for bid in range(0,gv.sd['nbrd']):
                     $for s in range(0,8):
                         $ sid = bid*8 + s;
-                        <input type="checkbox" id="valvesNeedPump${pumpId}Valve${sid}" name="valvesNeedPump${pumpId}Valve${sid}" value="valvesNeedPump${pumpId}Valve${sid}">${gv.snames[sid]}
+                        $if pumpId < len(settings['PumpName']):
+                            <input type="checkbox" id="valvesNeedPump${pumpId}Valve${sid}" name="valvesNeedPump${pumpId}Valve${sid}" value="valvesNeedPump${pumpId}Valve${sid}" ${"checked" if sid in settings[u"PumpNeedValves"][pumpId] else "" }>${gv.snames[sid]}
+                        $else:
+                            <input type="checkbox" id="valvesNeedPump${pumpId}Valve${sid}" name="valvesNeedPump${pumpId}Valve${sid}" value="valvesNeedPump${pumpId}Valve${sid}">${gv.snames[sid]}
 
                 <br /><br /><br />
 
@@ -74,7 +91,10 @@ $var page: advance_pump
                 $for bid in range(0,gv.sd['nbrd']):
                     $for s in range(0,8):
                         $ sid = bid*8 + s;
-                        <input type="checkbox" id="valvesNeedPump${pumpId}ON${sid}" name="valvesNeedPump${pumpId}ON${sid}" value="valvesNeedPump${pumpId}ON${sid}">${gv.snames[sid]}
+                        $if pumpId < len(settings['PumpName']):
+                            <input type="checkbox" id="valvesNeedPump${pumpId}ON${sid}" name="valvesNeedPump${pumpId}ON${sid}" value="valvesNeedPump${pumpId}ON${sid}" ${"checked" if sid in settings[u"PumpNeedValvesOn"][pumpId] else "" }>${gv.snames[sid]}
+                        $else:
+                            <input type="checkbox" id="valvesNeedPump${pumpId}ON${sid}" name="valvesNeedPump${pumpId}ON${sid}" value="valvesNeedPump${pumpId}ON${sid}">${gv.snames[sid]}
 
                 <br /><br /><br />
 
@@ -83,7 +103,10 @@ $var page: advance_pump
                 $for bid in range(0,gv.sd['nbrd']):
                     $for s in range(0,8):
                         $ sid = bid*8 + s;
-                        <input type="checkbox" id="valvesNeedPump${pumpId}Off${sid}" name="valvesNeedPump${pumpId}Off${sid}" value="valvesNeedPump${pumpId}Off${sid}">${gv.snames[sid]}
+                        $if pumpId < len(settings['PumpName']):
+                            <input type="checkbox" id="valvesNeedPump${pumpId}Off${sid}" name="valvesNeedPump${pumpId}Off${sid}" value="valvesNeedPump${pumpId}Off${sid}" ${"checked" if sid in settings[u"PumpNeedValvesOff"][pumpId] else "" }>${gv.snames[sid]}
+                        $else:
+                            <input type="checkbox" id="valvesNeedPump${pumpId}Off${sid}" name="valvesNeedPump${pumpId}Off${sid}" value="valvesNeedPump${pumpId}Off${sid}">${gv.snames[sid]}
 
                 <br /><br />
         </form>
