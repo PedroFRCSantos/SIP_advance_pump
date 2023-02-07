@@ -122,16 +122,21 @@ def runTreadPump():
         lastPupState = copy.deepcopy(pumpsStateVect)
         mutexAdvPump.release()
 
-        # send signal to station that change
+        # send signal to station that change to ON
         for pupmpIdOn in listPups2TurnOn:
             if pupmpIdOn < len(localSettings):
                 pupmpAction(localSettings['PumpDeviceType'][pupmpIdOn], localSettings['PumpIP'][pupmpIdOn], True)
+
+        # send signal to station that change to OFF
+        for pupmpIdOff in listPups2TurnOff:
+            if pupmpIdOff < len(localSettings):
+                pupmpAction(localSettings['PumpDeviceType'][pupmpIdOff], localSettings['PumpIP'][pupmpIdOff], False)
 
         # TODO: every 30 seconds force state if needed and check if valves are only
         nowTime = datetime.now()
         diffTime = nowTime - lastTime
         secondsInt = int(diffTime.seconds)
-        if 30 - secondsInt > 0:
+        if 30 - secondsInt < 0:
             lastTime = nowTime
 
             # send signal to all pumps to keep on
@@ -140,9 +145,12 @@ def runTreadPump():
                     pupmpAction(localSettings['PumpDeviceType'][currPumpKeepOnId], localSettings['PumpIP'][currPumpKeepOnId], True)
 
             # send signal to all pumps to keep off
-            for currPumpKeepOffId in listPups2KeepOn:
+            for currPumpKeepOffId in listPups2KeepOff:
                 if localSettings['PumpKeepState'][currPumpKeepOffId]:
                     pupmpAction(localSettings['PumpDeviceType'][currPumpKeepOffId], localSettings['PumpIP'][currPumpKeepOffId], False)
+
+            # check if all pupms are on-line
+            #TODO
 
 # Read in the commands for this plugin from it's JSON file
 def load_advance_pump():
