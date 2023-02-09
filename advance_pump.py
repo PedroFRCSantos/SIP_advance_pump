@@ -35,6 +35,9 @@ urls.extend([
     u"/advance-pump-set-save", u"plugins.advance_pump.save_settings",
     u"/advance-pump-home", u"plugins.advance_pump.home",
     u"/advance-pump-delete", u"plugins.advance_pump.delete_pump",
+    u"/advance-pump-is-online", u"plugins.advance_pump.pump_is_online",
+    u"/advance-pump-switch-state", u"plugins.advance_pump.pump_is_on",
+    u"/advance-pump-switch-manual", u"plugins.advance_pump.pump_change_manual_state"
     ])
 # fmt: on
 
@@ -42,7 +45,51 @@ urls.extend([
 gv.plugin_menu.append([_(u"Advance Pump"), u"/advance-pump-home"])
 
 settingsAdvancePump = {'PumpName': [], 'PumpDeviceType': [], 'PumpIP': [], 'PumpNeedValves': [], 'PumpNeedValvesOn': [], 'PumpNeedValvesOff': [], 'PumpKeepState': []}
+advancePumpManualMode = {}
 mutexAdvPump = Lock()
+
+def requestHTTP(commandURL):
+    resposeIsOk = -1
+    response = None
+
+    try:
+        response = requests.get(commandURL)
+        resposeIsOk = 0
+
+        response = response.json()
+    except requests.exceptions.Timeout:
+        # Maybe set up for a retry, or continue in a retry loop
+        resposeIsOk = 1
+        print("Connection time out")
+    except requests.exceptions.TooManyRedirects:
+        # Tell the user their URL was bad and try a different one
+        resposeIsOk = 2
+        print("Too many redirections")
+    except requests.exceptions.RequestException as e:
+        # catastrophic error. bail.
+        #raise SystemExit(e)
+        resposeIsOk = 3
+        print("Fatal error")
+
+    return resposeIsOk, response
+
+def pumpIsOnLine(deviceType : str, pumpIP : str):
+    resposeIsOk = -1
+    isTurnOn = False
+
+    if deviceType == 'shelly1':
+        commandURL = u"http://" + pumpIP + u"/status"
+        response = None
+
+        resposeIsOk, response = requestHTTP(commandURL)
+
+        if resposeIsOk == 0:
+            isTurnOn = bool(response['relays'][0]['ison'])
+    else:
+        pass
+        # TODO: another supported device
+
+    return resposeIsOk, isTurnOn
 
 def pupmpAction(deviceType : str, pumpIP : str, setState : bool):
     resposeIsOk = -1
@@ -54,24 +101,7 @@ def pupmpAction(deviceType : str, pumpIP : str, setState : bool):
             commandURL = u"http://" + pumpIP + u"/relay/0?turn=off"
         response = None
 
-        try:
-            response = requests.get(commandURL)
-            resposeIsOk = 0
-
-            response = response.json()
-        except requests.exceptions.Timeout:
-            # Maybe set up for a retry, or continue in a retry loop
-            resposeIsOk = 1
-            print("Connection time out")
-        except requests.exceptions.TooManyRedirects:
-            # Tell the user their URL was bad and try a different one
-            resposeIsOk = 2
-            print("Too many redirections")
-        except requests.exceptions.RequestException as e:
-            # catastrophic error. bail.
-            #raise SystemExit(e)
-            resposeIsOk = 3
-            print("Fatal error")
+        resposeIsOk, response = requestHTTP(commandURL)
     else:
         pass
         # TODO: another supported device
@@ -79,7 +109,7 @@ def pupmpAction(deviceType : str, pumpIP : str, setState : bool):
     return resposeIsOk
 
 def runTreadPump():
-    global settingsAdvancePump, mutexAdvPump, pumpsStateVect
+    global settingsAdvancePump, mutexAdvPump, pumpsStateVect, lasTimeOnLine, switchPumpStatus
 
     mutexAdvPump.acquire()
     lastPupState = copy.deepcopy(pumpsStateVect)
@@ -118,6 +148,26 @@ def runTreadPump():
                 else:
                     listPups2KeepOff.append(currentPumpId)
 
+        # check pupms in manual mode
+        for pumpIdManual in advancePumpManualMode:
+            # pump force to turn off
+            if not advancePumpManualMode[pumpIdManual] and pumpIdManual in listPups2TurnOn:
+                listPups2TurnOn.remove(pumpIdManual)
+            if not advancePumpManualMode[pumpIdManual] and pumpIdManual not in listPups2TurnOff:
+                listPups2TurnOff.append(pumpIdManual)
+
+            # pump force to turn on
+            if advancePumpManualMode[pumpIdManual] and pumpIdManual not in listPups2TurnOn:
+                listPups2TurnOn.append(pumpIdManual)
+            if advancePumpManualMode[pumpIdManual] and pumpIdManual in listPups2TurnOff:
+                listPups2TurnOff.remove(pumpIdManual)
+
+            # remove keep state if in manual mode
+            if pumpIdManual in listPups2KeepOn:
+                listPups2KeepOn.remove(pumpIdManual)
+            if pumpIdManual in listPups2KeepOff:
+                listPups2KeepOff.remove(pumpIdManual)
+
         # save last pupms stats, to check changes
         lastPupState = copy.deepcopy(pumpsStateVect)
         mutexAdvPump.release()
@@ -132,11 +182,11 @@ def runTreadPump():
             if pupmpIdOff < len(localSettings):
                 pupmpAction(localSettings['PumpDeviceType'][pupmpIdOff], localSettings['PumpIP'][pupmpIdOff], False)
 
-        # TODO: every 30 seconds force state if needed and check if valves are only
+        # every 30 seconds force state if needed and check if valves are only
         nowTime = datetime.now()
         diffTime = nowTime - lastTime
         secondsInt = int(diffTime.seconds)
-        if 30 - secondsInt < 0:
+        if secondsInt > 30 or len(listPups2TurnOn) > 0 and len(listPups2TurnOff) > 0:
             lastTime = nowTime
 
             # send signal to all pumps to keep on
@@ -149,12 +199,29 @@ def runTreadPump():
                 if localSettings['PumpKeepState'][currPumpKeepOffId]:
                     pupmpAction(localSettings['PumpDeviceType'][currPumpKeepOffId], localSettings['PumpIP'][currPumpKeepOffId], False)
 
-            # check if all pupms are on-line
-            #TODO
+            # check if all pupms are on-line and states
+            mutexAdvPump.acquire()
+            localOnlineState = copy.deepcopy(lasTimeOnLine)
+            localValveState = copy.deepcopy(switchPumpStatus)
+            mutexAdvPump.release()
+
+            for pumpsCheck in range(len(localSettings['PumpName'])):
+                resposeIsOk, isTurnOn = pumpIsOnLine(localSettings['PumpDeviceType'][pumpsCheck], localSettings['PumpIP'][pumpsCheck])
+                if resposeIsOk == 0:
+                    localOnlineState[pumpsCheck] = datetime.now()
+
+                    localValveState[pumpsCheck] = isTurnOn
+                else:
+                    localValveState[pumpsCheck] = False
+
+            mutexAdvPump.acquire()
+            lasTimeOnLine = copy.deepcopy(localOnlineState)
+            switchPumpStatus = copy.deepcopy(localValveState)
+            mutexAdvPump.release()
 
 # Read in the commands for this plugin from it's JSON file
 def load_advance_pump():
-    global settingsAdvancePump, mutexAdvPump, pumpsStateVect
+    global settingsAdvancePump, mutexAdvPump, pumpsStateVect, lasTimeOnLine, switchPumpStatus
 
     mutexAdvPump.acquire()
 
@@ -167,6 +234,8 @@ def load_advance_pump():
                 json.dump(settingsAdvancePump, f)  # save to file
 
     pumpsStateVect = [False] * len(settingsAdvancePump['PumpName'])
+    lasTimeOnLine = [datetime.now()] * len(settingsAdvancePump['PumpName'])
+    switchPumpStatus = [False] * len(settingsAdvancePump['PumpName'])
 
     mutexAdvPump.release()
 
@@ -216,7 +285,14 @@ class home(ProtectedPage):
 
     def GET(self):
         settings = {}
-        return template_render.advance_pump_home(settings)  # open settings page
+        global settingsAdvancePump, mutexAdvPump, advancePumpManualMode
+
+        mutexAdvPump.acquire()
+        settings = copy.deepcopy(settingsAdvancePump)
+        advancePumpManualModeLocal = copy.deepcopy(advancePumpManualMode)
+        mutexAdvPump.release()
+
+        return template_render.advance_pump_home(settings, advancePumpManualModeLocal)  # open settings page
 
 class settings(ProtectedPage):
     """
@@ -224,7 +300,11 @@ class settings(ProtectedPage):
     """
 
     def GET(self):
-        global settingsAdvancePump
+        global mutexAdvPump, settingsAdvancePump
+
+        mutexAdvPump.acquire()
+        settingsAdvancePumpLocal = copy.deepcopy(settingsAdvancePump)
+        mutexAdvPump.release()
 
         qdict = web.input()
 
@@ -232,7 +312,7 @@ class settings(ProtectedPage):
         if "AddPumps" in qdict:
             addPump = int(qdict["AddPumps"])
 
-        return template_render.advance_pump(settingsAdvancePump, addPump)  # open settings page
+        return template_render.advance_pump(settingsAdvancePumpLocal, addPump)  # open settings page
 
 class save_settings(ProtectedPage):
     """
@@ -240,7 +320,7 @@ class save_settings(ProtectedPage):
     """
 
     def GET(self):
-        global settingsAdvancePump, pumpsStateVect
+        global settingsAdvancePump, mutexAdvPump, pumpsStateVect, lasTimeOnLine, switchPumpStatus
 
         mutexAdvPump.acquire()
         settingsAdvancePumpTMP = copy.deepcopy(settingsAdvancePump)
@@ -338,8 +418,16 @@ class save_settings(ProtectedPage):
         if len(settingsAdvancePump['PumpName']) > len(pumpsStateVect):
             increase = [False] * (len(settingsAdvancePump['PumpName']) - len(pumpsStateVect))
             pumpsStateVect.extend(increase)
+
+            increase = [datetime.now()] * (len(settingsAdvancePump['PumpName']) - len(pumpsStateVect))
+            lasTimeOnLine.extend(increase)
+
+            switchPumpStatus = [False] * (len(settingsAdvancePump['PumpName']) - len(pumpsStateVect))
+            switchPumpStatus.extend(switchPumpStatus)
         elif len(settingsAdvancePump['PumpName']) < len(pumpsStateVect):
             pumpsStateVect = pumpsStateVect[:len(settingsAdvancePump['PumpName'])]
+            lasTimeOnLine = lasTimeOnLine[:len(settingsAdvancePump['PumpName'])]
+            switchPumpStatus = switchPumpStatus[:len(settingsAdvancePump['PumpName'])]
         mutexAdvPump.release()
 
         # save new configuration to file
@@ -354,6 +442,7 @@ class delete_pump(ProtectedPage):
     """
 
     def GET(self):
+        global settingsAdvancePump, mutexAdvPump, pumpsStateVect, lasTimeOnLine, switchPumpStatus
 
         qdict = web.input()
 
@@ -364,6 +453,8 @@ class delete_pump(ProtectedPage):
         mutexAdvPump.acquire()
         if pump2Delete < len(pumpsStateVect):
             del pumpsStateVect[pump2Delete]
+            del lasTimeOnLine[pump2Delete]
+            del switchPumpStatus[pump2Delete]
 
             del settingsAdvancePump['PumpName'][pump2Delete]
             del settingsAdvancePump['PumpDeviceType'][pump2Delete]
@@ -381,3 +472,110 @@ class delete_pump(ProtectedPage):
             json.dump(settingsAdvancePumpTMP, f, indent=4)
 
         web.seeother(u"/advance-pump-set")  # Return to definition pannel
+
+class pump_is_online(ProtectedPage):
+    """
+    Check if pump is online
+    """
+
+    def GET(self):
+        global mutexAdvPump, lasTimeOnLine
+
+        qdict = web.input()
+        if "PumpId" in qdict:
+            idxPump = int(qdict["PumpId"])
+            currentDatime = datetime.now()
+            mutexAdvPump.acquire()
+            if idxPump >= 0 and idxPump < len(lasTimeOnLine):
+                lastSeen = lasTimeOnLine[idxPump]
+            else:
+                lastSeen = datetime.now()
+                return "<b style=\"color:gray;\">NONE</b>"
+            mutexAdvPump.release()
+
+            diffTime = currentDatime - lastSeen
+            secondsInt = int(diffTime.seconds)
+            if secondsInt > 45:
+                return "<b style=\"color:red;\">OFFLINE</b>"
+            else:
+                return "<b style=\"color:green;\">ONLINE</b>"
+
+        return "<b style=\"color:gray;\">NONE</b>"
+
+class pump_is_on(ProtectedPage):
+    """
+    Check if pump is on
+    """
+
+    def GET(self):
+        global mutexAdvPump, lasTimeOnLine, switchPumpStatus
+
+        qdict = web.input()
+        if "PumpId" in qdict:
+            idxPump = int(qdict["PumpId"])
+            mutexAdvPump.acquire()
+            if idxPump >= 0 and idxPump < len(lasTimeOnLine):
+                if switchPumpStatus[idxPump]:
+                    mutexAdvPump.release()
+                    return "<b style=\"color:green;\">ON</b>"
+                else:
+                    mutexAdvPump.release()
+                    return "<b style=\"color:red;\">OFF</b>"
+
+            mutexAdvPump.release()
+
+        return "<b style=\"color:gray;\">NONE</b>"
+
+class pump_change_manual_state(ProtectedPage):
+    """
+    change manual mode pumps states
+    """
+
+    def GET(self):
+        global mutexAdvPump, lasTimeOnLine, switchPumpStatus, settingsAdvancePump
+
+        qdict = web.input()
+        if "PumpId" in qdict:
+            idxPump = int(qdict["PumpId"])
+            if "ChangeStateState" in qdict:
+                mutexAdvPump.acquire()
+                if qdict["ChangeStateState"] == 'auto' and idxPump in advancePumpManualMode:
+                    del advancePumpManualMode[idxPump]
+                elif qdict["ChangeStateState"] == 'on':
+                    advancePumpManualMode[idxPump] = True
+                elif qdict["ChangeStateState"] == 'off':
+                    advancePumpManualMode[idxPump] = False
+
+                pumpType = settingsAdvancePump['PumpDeviceType'][idxPump]
+                pumpIP = settingsAdvancePump['PumpIP'][idxPump]
+                mutexAdvPump.release()
+
+                if qdict["ChangeStateState"] == 'on':
+                    # send on signal
+                    pupmpAction(pumpType, pumpIP, True)
+                elif qdict["ChangeStateState"] == 'off':
+                    # send off signal
+                    pupmpAction(pumpType, pumpIP, False)
+
+                if qdict["ChangeStateState"] == 'on' or qdict["ChangeStateState"] == 'off':
+                    # check status
+                    resposeIsOk, isTurnOn = pumpIsOnLine(pumpType, pumpIP)
+
+                    mutexAdvPump.acquire()
+                    if resposeIsOk == 0:
+                        lasTimeOnLine[idxPump] = datetime.now()
+
+                        switchPumpStatus[idxPump] = isTurnOn
+                    else:
+                        switchPumpStatus[idxPump] = False
+                    mutexAdvPump.release()
+
+                # return next state
+                if qdict["ChangeStateState"] == 'on':
+                    return '<button class="submit" onclick="sendPumpSwitchChange(\'off\', '+ str(idxPump) +')"><b>Turn Switch Off</b></button>'
+                elif qdict["ChangeStateState"] == 'off':
+                    return '<button class="submit" onclick="sendPumpSwitchChange(\'auto\', '+ str(idxPump) +')"><b>Turn Switch Auto</b></button>'
+                elif qdict["ChangeStateState"] == 'auto':
+                    return '<button class="submit" onclick="sendPumpSwitchChange(\'on\', '+ str(idxPump) +')"><b>Turn Switch On</b></button>'
+
+        return ""

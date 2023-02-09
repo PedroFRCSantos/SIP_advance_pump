@@ -13,6 +13,14 @@ $var page: advance_pump
 	jQuery(document).ready(function () {
 		jQuery("button#addNewPump").click(function () {
 			window.location = "./advance-pump-set?AddPumps=1";
+        });
+
+		jQuery("button#homeButton").click(function () {
+			window.location = "/advance-pump-home";
+		});
+
+		jQuery("button#defButton").click(function () {
+			window.location = "/advance-pump-set";
 		});
 	});
 </script>
@@ -27,6 +35,17 @@ $var page: advance_pump
     <!--     <div class="title">Command Line Control -->
     <!--     <button class="execute" id="docButton" type="button" >$_('Help')</button> -->
     <!--     </div> -->
+
+    <div>
+        <p>
+            <button class="execute" id="homeButton" type="button">Home</button>
+            <button class="execute" id="defButton" type="button">Definition</button>
+        </p>
+        <p>Control your pumps acording to valves states. Same valves need to pump working to have wather</p>
+    </div>
+
+    <br />
+
     <div>
         $if addPump == 0:
             <button id="addNewPump" class="submit"><b>Add More pump</b></button>

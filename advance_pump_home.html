@@ -1,7 +1,73 @@
-$def with(settings)
+$def with(settings, pumpManualMode)
 
 $var title: $_(u'SIP DB Logger')
 $var page: advance_pump_home
+
+<script>
+	jQuery(document).ready(function () {
+		jQuery("button#homeButton").click(function () {
+			window.location = "/advance-pump-home";
+		});
+
+		jQuery("button#defButton").click(function () {
+			window.location = "/advance-pump-set";
+		});
+	});
+
+	function getXHR() {
+		if (window.XMLHttpRequest) { // code for IE7+, Firefox, Chrome, Opera, Safari
+			return new XMLHttpRequest();
+		}
+		else { // code for IE6, IE5
+			return new ActiveXObject("Microsoft.XMLHTTP");
+		}
+	}
+
+	function sendPumpSwitchChange(newStateChange, pumpId) {
+		var xmlhttp = getXHR();
+
+		xmlhttp.open("GET", "/advance-pump-switch-manual?PumpId=" + pumpId + "&ChangeStateState=" + newStateChange, false);
+		xmlhttp.send(null);
+		document.getElementById("sendPumpChangeSwitchId" + pumpId).innerHTML = xmlhttp.responseText;
+
+		xmlhttp.open("GET", "/advance-pump-is-online?PumpId=" + pumpId, false);
+		xmlhttp.send(null);
+		document.getElementById("isPumpOnLineTable" + pumpId).innerHTML = xmlhttp.responseText;
+
+		xmlhttp.open("GET", "/advance-pump-switch-state?PumpId=" + pumpId, false);
+		xmlhttp.send(null);
+		document.getElementById("isPumpSwitchLineTable" + pumpId).innerHTML = xmlhttp.responseText;
+	}
+
+	function pumpIsOnlineAndStatus() {
+		var xmlhttp = getXHR();
+
+		$for pumpId in range(len(settings['PumpName'])):
+			xmlhttp.open("GET", "/advance-pump-is-online?PumpId=${pumpId}", false);
+			xmlhttp.send(null);
+			document.getElementById("isPumpOnLineTable${pumpId}").innerHTML = xmlhttp.responseText;
+
+			xmlhttp.open("GET", "/advance-pump-switch-state?PumpId=${pumpId}", false);
+			xmlhttp.send(null);
+			document.getElementById("isPumpSwitchLineTable${pumpId}").innerHTML = xmlhttp.responseText;
+	}
+
+	const tellTime = async function () {
+		pumpIsOnlineAndStatus();
+	}
+
+	const minutes = 0.2;
+	const interval = minutes * 60 * 1000;
+
+	setInterval(function () {
+		// catch all the errors.
+		tellTime().catch(console.log);
+	}, interval);
+
+	document.addEventListener('DOMContentLoaded', function () {
+		pumpIsOnlineAndStatus();
+	}, false);
+</script>
 
 <style>
 	.columnName {
@@ -14,6 +80,42 @@ $var page: advance_pump_home
 	<!--     <button class="execute" id="docButton" type="button" >$_('Help')</button> -->
 	<!--     </div> -->
 	<div>
+		<p>
+			<button class="execute" id="homeButton" type="button">Home</button>
+			<button class="execute" id="defButton" type="button">Definition</button>
+		</p>
 		<p>Control your pumps acording to valves states. Same valves need to pump working to have wather</p>
 	</div>
+
+	<br />
+
+	<div align="center">
+		<table width="100%" style="border: 1px solid black;">
+			<tr>
+				<th style="border: 1px solid black;">Pump Name</th>
+				<th style="border: 1px solid black;">Divace type</th>
+				<th style="border: 1px solid black;">Valve Ip</th>
+				<th style="border: 1px solid black;">Is online</th>
+				<th style="border: 1px solid black;">Switch Status</th>
+				<th style="border: 1px solid black;">Change Switch</th>
+			</tr>
+
+			$for pumpId in range(len(settings['PumpName'])):
+				<tr>
+					<td>${settings['PumpName'][pumpId]}</td>
+					<td style="text-align:center">${settings['PumpDeviceType'][pumpId]}</td>
+					<td style="text-align:center">${settings['PumpIP'][pumpId]}</td>
+					<td style="text-align:center" id="isPumpOnLineTable${pumpId}"></td>
+					<td style="text-align:center" id="isPumpSwitchLineTable${pumpId}"></td>
+					$if pumpId not in pumpManualMode:
+						<td style="text-align:center" id="sendPumpChangeSwitchId${pumpId}"><button class="submit" onclick="sendPumpSwitchChange('on', ${pumpId})"><b>Turn Switch On</b></button></td>
+					$elif pumpManualMode[pumpId]:
+						<td style="text-align:center" id="sendPumpChangeSwitchId${pumpId}"><button class="submit" onclick="sendPumpSwitchChange('off', ${pumpId})"><b>Turn Switch Off</b></button></td>
+					$else:
+						<td style="text-align:center" id="sendPumpChangeSwitchId${pumpId}"><button class="submit" onclick="sendPumpSwitchChange('auto', ${pumpId})"><b>Turn Switch Auto</b></button></td>
+				</tr>
+		</table>
+	</div>
+
+	<br /><br />
 </div>
