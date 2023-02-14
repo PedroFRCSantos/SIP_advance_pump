@@ -22,7 +22,7 @@ from webpages import ProtectedPage
 
 try:
     from db_logger import db_logger_read_definitions
-    from db_logger_generic_table import create_generic_table, add_date_generic_table
+    from db_logger_generic_table import create_generic_table, change_table_name, add_date_generic_table, change_last_register
     withDBLogger = True
 except ImportError:
     withDBLogger = False
@@ -109,13 +109,23 @@ def pupmpAction(deviceType : str, pumpIP : str, setState : bool):
     return resposeIsOk
 
 def runTreadPump():
-    global settingsAdvancePump, mutexAdvPump, pumpsStateVect, lasTimeOnLine, switchPumpStatus
+    global settingsAdvancePump, mutexAdvPump, pumpsStateVect, lasTimeOnLine, switchPumpStatus, advancePumpManualMode
 
     mutexAdvPump.acquire()
     lastPupState = copy.deepcopy(pumpsStateVect)
+    lastAdvPumpManualMode = copy.deepcopy(advancePumpManualMode)
     mutexAdvPump.release()
 
     lastTime = datetime.now()
+
+    # Check if to save pumps logs in data-base
+    mutexAdvPump.acquire()
+    localSettings = copy.deepcopy(settingsAdvancePump)
+    mutexAdvPump.release()
+    if withDBLogger and localSettings['PumpDBLog']:
+        dbDefinitions = db_logger_read_definitions()
+    else:
+        dbDefinitions = {}
 
     while True:
         sleep(1)
@@ -153,11 +163,11 @@ def runTreadPump():
             # pump force to turn off
             if not advancePumpManualMode[pumpIdManual] and pumpIdManual in listPups2TurnOn:
                 listPups2TurnOn.remove(pumpIdManual)
-            if not advancePumpManualMode[pumpIdManual] and pumpIdManual not in listPups2TurnOff:
+            if not advancePumpManualMode[pumpIdManual] and pumpIdManual not in listPups2TurnOff and (pumpIdManual not in lastAdvPumpManualMode or lastAdvPumpManualMode[pumpIdManual]):
                 listPups2TurnOff.append(pumpIdManual)
 
             # pump force to turn on
-            if advancePumpManualMode[pumpIdManual] and pumpIdManual not in listPups2TurnOn:
+            if advancePumpManualMode[pumpIdManual] and pumpIdManual not in listPups2TurnOn and (pumpIdManual not in lastAdvPumpManualMode or not lastAdvPumpManualMode[pumpIdManual]):
                 listPups2TurnOn.append(pumpIdManual)
             if advancePumpManualMode[pumpIdManual] and pumpIdManual in listPups2TurnOff:
                 listPups2TurnOff.remove(pumpIdManual)
@@ -176,17 +186,28 @@ def runTreadPump():
         for pupmpIdOn in listPups2TurnOn:
             if pupmpIdOn < len(localSettings):
                 pupmpAction(localSettings['PumpDeviceType'][pupmpIdOn], localSettings['PumpIP'][pupmpIdOn], True)
+                # save to DB turn on register
+                listElements = {"AdvancePumpDateBegin": "datetime", "AdvancePumpDateEnd": "datetime"}
+                create_generic_table("advance_pump_" + localSettings['PumpName'][pupmpIdOn].strip(), listElements, dbDefinitions)
+                turnOnDateTime = datetime.now()
+                listData = [turnOnDateTime.strftime("%Y-%m-%d %H:%M:%S"), turnOnDateTime.strftime("%Y-%m-%d %H:%M:%S")]
+                add_date_generic_table("advance_pump_" + localSettings['PumpName'][pupmpIdOn].strip(), listData, dbDefinitions)
 
         # send signal to station that change to OFF
         for pupmpIdOff in listPups2TurnOff:
             if pupmpIdOff < len(localSettings):
                 pupmpAction(localSettings['PumpDeviceType'][pupmpIdOff], localSettings['PumpIP'][pupmpIdOff], False)
+                # save to DB turn off register
+                listElements = {"AdvancePumpDateBegin": "datetime", "AdvancePumpDateEnd": "datetime"}
+                create_generic_table("advance_pump_" + localSettings['PumpName'][pupmpIdOn].strip(), listElements, dbDefinitions)
+                turnOffDateTime = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                change_last_register("advance_pump_" + localSettings['PumpName'][pupmpIdOn].strip(), 2, turnOffDateTime, dbDefinitions)
 
         # every 30 seconds force state if needed and check if valves are only
         nowTime = datetime.now()
         diffTime = nowTime - lastTime
         secondsInt = int(diffTime.seconds)
-        if secondsInt > 30 or len(listPups2TurnOn) > 0 and len(listPups2TurnOff) > 0:
+        if secondsInt > 30 or len(listPups2TurnOn) > 0 or len(listPups2TurnOff) > 0:
             lastTime = nowTime
 
             # send signal to all pumps to keep on
@@ -214,9 +235,14 @@ def runTreadPump():
                 else:
                     localValveState[pumpsCheck] = False
 
+                    # if became off-line save to logs in DB
+                    if True:
+                        pass
+
             mutexAdvPump.acquire()
             lasTimeOnLine = copy.deepcopy(localOnlineState)
             switchPumpStatus = copy.deepcopy(localValveState)
+            lastAdvPumpManualMode = copy.deepcopy(advancePumpManualMode)
             mutexAdvPump.release()
 
 # Read in the commands for this plugin from it's JSON file
@@ -300,7 +326,7 @@ class settings(ProtectedPage):
     """
 
     def GET(self):
-        global mutexAdvPump, settingsAdvancePump
+        global mutexAdvPump, settingsAdvancePump, withDBLogger
 
         mutexAdvPump.acquire()
         settingsAdvancePumpLocal = copy.deepcopy(settingsAdvancePump)
@@ -312,7 +338,7 @@ class settings(ProtectedPage):
         if "AddPumps" in qdict:
             addPump = int(qdict["AddPumps"])
 
-        return template_render.advance_pump(settingsAdvancePumpLocal, addPump)  # open settings page
+        return template_render.advance_pump(settingsAdvancePumpLocal, addPump, withDBLogger)  # open settings page
 
 class save_settings(ProtectedPage):
     """
@@ -333,13 +359,39 @@ class save_settings(ProtectedPage):
         if "pumpName" + str(initialSize) in qdict:
             addNew = 1
 
+        # Check if to save pumps logs in data-base
+        settingsAdvancePumpTMP['PumpDBLog'] = "pumpDBLog" in qdict
+        if withDBLogger and settingsAdvancePumpTMP['PumpDBLog']:
+            dbDefinitions = db_logger_read_definitions()
+        else:
+            dbDefinitions = {}
+
         # Get name of pupms
+        listElements = {"AdvancePumpDateBegin": "datetime", "AdvancePumpDateEnd": "datetime"}
+        listElementsEvents = {"AdvancePumpLogsDate": "datetime", "AdvancePumpLogsData": "text"}
+
         for pumpId in range(initialSize + addNew):
             if "pumpName" + str(pumpId) in qdict:
                 if pumpId < initialSize:
+                    oldName = settingsAdvancePumpTMP['PumpName'][pumpId].strip()
                     settingsAdvancePumpTMP['PumpName'][pumpId] = qdict["pumpName" + str(pumpId)]
+
+                    if withDBLogger and settingsAdvancePumpTMP['PumpDBLog']:                        
+                        if "pumpIsTheSame" + str(pumpId) in qdict:
+                            # rename table
+                            create_generic_table("advance_pump_" + oldName, listElements, dbDefinitions)
+                            create_generic_table("advance_pump_logs_" + oldName, listElementsEvents, dbDefinitions)
+                            if "advance_pump_" + oldName != "advance_pump_" + settingsAdvancePumpTMP['PumpName'][pumpId].strip():
+                                change_table_name("advance_pump_" + oldName, "advance_pump_" + settingsAdvancePumpTMP['PumpName'][pumpId].strip(), dbDefinitions)
+                                change_table_name("advance_pump_logs_" + oldName, "advance_pump_logs_" + settingsAdvancePumpTMP['PumpName'][pumpId].strip(), dbDefinitions)
+                        else:
+                            create_generic_table("advance_pump_" + settingsAdvancePumpTMP['PumpName'][pumpId].strip(), listElements, dbDefinitions)
+                            create_generic_table("advance_pump_logs_" + settingsAdvancePumpTMP['PumpName'][pumpId].strip(), listElementsEvents, dbDefinitions)
                 else:
                     settingsAdvancePumpTMP['PumpName'].append(qdict["pumpName" + str(pumpId)])
+
+                    create_generic_table("advance_pump_" + qdict["pumpName" + str(pumpId)], listElements, dbDefinitions)
+                    create_generic_table("advance_pump_logs_" + qdict["pumpName" + str(pumpId)], listElementsEvents, dbDefinitions)
 
         # pump device type
         for pumpId in range(initialSize + addNew):

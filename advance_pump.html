@@ -1,4 +1,4 @@
-$def with(settings, addPump)
+$def with(settings, addPump, useDBLogger)
 
 $var title: $_(u'SIP DB Logger')
 $var page: advance_pump
@@ -52,6 +52,14 @@ $var page: advance_pump
             <br /><br />
 
         <form id="advance-pump-set-save" name="advance-pump-set-save" action="/advance-pump-set-save" method="get">
+            $if useDBLogger:
+                <input type="checkbox" size="50" value="pumpDBLog" id="pumpDBLog" name="pumpDBLog" ${"checked" if settings[u"PumpDBLog"] else "" }>
+                Save valves states to data-base
+            $else:
+                No data-base plug-in, no data to data-base could be saved
+
+            <br /><br />
+
             $for pumpId in range(len(settings['PumpName']) + addPump):
                 $if pumpId < len(settings['PumpName']):
                     ${settings['PumpName'][pumpId]}
@@ -63,6 +71,9 @@ $var page: advance_pump
                     <input type="text" size="50" id="pumpName${pumpId}" name="pumpName${pumpId}" value="${settings['PumpName'][pumpId]}">
                 $else:
                     <input type="text" size="50" id="pumpName${pumpId}" name="pumpName${pumpId}">
+
+                <input type="checkbox" size="50" value="pumpIsTheSame${pumpId}" id="pumpIsTheSame${pumpId}" name="pumpIsTheSame${pumpId}" checked>
+                Pump is the same only change name if needed
 
                 <br />
 
