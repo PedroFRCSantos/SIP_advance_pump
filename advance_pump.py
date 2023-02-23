@@ -37,14 +37,15 @@ urls.extend([
     u"/advance-pump-delete", u"plugins.advance_pump.delete_pump",
     u"/advance-pump-is-online", u"plugins.advance_pump.pump_is_online",
     u"/advance-pump-switch-state", u"plugins.advance_pump.pump_is_on",
-    u"/advance-pump-switch-manual", u"plugins.advance_pump.pump_change_manual_state"
+    u"/advance-pump-switch-manual", u"plugins.advance_pump.pump_change_manual_state",
+    u"/advance-pump-list", u"plugins.advance_pump.pump_get_list",
     ])
 # fmt: on
 
 # Add this plugin to the PLUGINS menu ["Menu Name", "URL"], (Optional)
 gv.plugin_menu.append([_(u"Advance Pump"), u"/advance-pump-home"])
 
-settingsAdvancePump = {'PumpName': [], 'PumpDeviceType': [], 'PumpIP': [], 'PumpNeedValves': [], 'PumpNeedValvesOn': [], 'PumpNeedValvesOff': [], 'PumpKeepState': []}
+settingsAdvancePump = {'PumpDBLog': True, 'PumpName': [], 'PumpDeviceType': [], 'PumpIP': [], 'PumpNeedValves': [], 'PumpNeedValvesOn': [], 'PumpNeedValvesOff': [], 'PumpKeepState': [], 'PumpPower': [], 'PumpMinWorkingTime': []}
 advancePumpManualMode = {}
 mutexAdvPump = Lock()
 
@@ -132,6 +133,9 @@ def runTreadPump():
         listPups2TurnOn = []
         listPups2TurnOff = []
 
+        listPumps2TurOnBoot = []
+        listPumps2TurOffBoot = []
+
         listPups2KeepOn = []
         listPups2KeepOff = []
 
@@ -140,11 +144,11 @@ def runTreadPump():
 
         # for new pupms fix the state
         if len(pumpsStateVect) > len(lastPupState):
-            for newPump in range(len(pumpsStateVect)):
+            for newPump in range(len(lastPupState), len(pumpsStateVect)):
                 if pumpsStateVect[newPump]:
-                    listPups2TurnOn.append(newPump)
+                    listPumps2TurOnBoot.append(newPump)
                 else:
-                    listPups2TurnOff.append(newPump)
+                    listPumps2TurOffBoot.append(newPump)
 
         for currentPumpId in range(min(len(pumpsStateVect), len(lastPupState))):
             if pumpsStateVect[currentPumpId]:
@@ -185,7 +189,7 @@ def runTreadPump():
         # send signal to station that change to ON
         for pupmpIdOn in listPups2TurnOn:
             if pupmpIdOn < len(localSettings):
-                pupmpAction(localSettings['PumpDeviceType'][pupmpIdOn], localSettings['PumpIP'][pupmpIdOn], True)
+                #pupmpAction(localSettings['PumpDeviceType'][pupmpIdOn], localSettings['PumpIP'][pupmpIdOn], True)
                 # save to DB turn on register
                 listElements = {"AdvancePumpDateBegin": "datetime", "AdvancePumpDateEnd": "datetime"}
                 create_generic_table("advance_pump_" + localSettings['PumpName'][pupmpIdOn].strip(), listElements, dbDefinitions)
@@ -196,12 +200,24 @@ def runTreadPump():
         # send signal to station that change to OFF
         for pupmpIdOff in listPups2TurnOff:
             if pupmpIdOff < len(localSettings):
-                pupmpAction(localSettings['PumpDeviceType'][pupmpIdOff], localSettings['PumpIP'][pupmpIdOff], False)
+                #pupmpAction(localSettings['PumpDeviceType'][pupmpIdOff], localSettings['PumpIP'][pupmpIdOff], False)
                 # save to DB turn off register
                 listElements = {"AdvancePumpDateBegin": "datetime", "AdvancePumpDateEnd": "datetime"}
-                create_generic_table("advance_pump_" + localSettings['PumpName'][pupmpIdOn].strip(), listElements, dbDefinitions)
+                create_generic_table("advance_pump_" + localSettings['PumpName'][pupmpIdOff].strip(), listElements, dbDefinitions)
                 turnOffDateTime = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-                change_last_register("advance_pump_" + localSettings['PumpName'][pupmpIdOn].strip(), 2, turnOffDateTime, dbDefinitions)
+                change_last_register("advance_pump_" + localSettings['PumpName'][pupmpIdOff].strip(), 2, turnOffDateTime, dbDefinitions)
+
+        # send signal to set initial state on
+        for pumpIdOnFirst in listPumps2TurOnBoot:
+            #pupmpAction(localSettings['PumpDeviceType'][pumpIdOnFirst], localSettings['PumpIP'][pumpIdOnFirst], True)
+            pass
+
+        # send signal to set initial state off
+        for pumpIdOffFirst in listPumps2TurOffBoot:
+            #pupmpAction(localSettings['PumpDeviceType'][pumpIdOffFirst], localSettings['PumpIP'][pumpIdOffFirst], True)
+            pass
+
+        # send signal to set initial state off
 
         # every 30 seconds force state if needed and check if valves are only
         nowTime = datetime.now()
@@ -213,12 +229,14 @@ def runTreadPump():
             # send signal to all pumps to keep on
             for currPumpKeepOnId in listPups2KeepOn:
                 if localSettings['PumpKeepState'][currPumpKeepOnId]:
-                    pupmpAction(localSettings['PumpDeviceType'][currPumpKeepOnId], localSettings['PumpIP'][currPumpKeepOnId], True)
+                    #pupmpAction(localSettings['PumpDeviceType'][currPumpKeepOnId], localSettings['PumpIP'][currPumpKeepOnId], True)
+                    pass
 
             # send signal to all pumps to keep off
             for currPumpKeepOffId in listPups2KeepOff:
                 if localSettings['PumpKeepState'][currPumpKeepOffId]:
-                    pupmpAction(localSettings['PumpDeviceType'][currPumpKeepOffId], localSettings['PumpIP'][currPumpKeepOffId], False)
+                    #pupmpAction(localSettings['PumpDeviceType'][currPumpKeepOffId], localSettings['PumpIP'][currPumpKeepOffId], False)
+                    pass
 
             # check if all pupms are on-line and states
             mutexAdvPump.acquire()
@@ -235,7 +253,7 @@ def runTreadPump():
                 else:
                     localValveState[pumpsCheck] = False
 
-                    # if became off-line save to logs in DB
+                    # TODO: if became off-line save to logs in DB
                     if True:
                         pass
 
@@ -465,17 +483,40 @@ class save_settings(ProtectedPage):
                 # add new
                 settingsAdvancePumpTMP['PumpNeedValvesOff'].append(listValves)
 
+        # pump power use in working mode
+        for pumpId in range(initialSize + addNew):
+            if 'devicePower' + str(pumpId) in qdict:
+                try:
+                    pumpPower = float(qdict['devicePower' + str(pumpId)])
+                except ValueError:
+                    pumpPower = ""
+
+                if pumpId < initialSize:
+                    settingsAdvancePumpTMP['PumpPower'][pumpId] = pumpPower
+                else:
+                    settingsAdvancePumpTMP['PumpPower'].append(pumpPower)
+
+        # pump minimum time to keep on, avoid to much start ups
+        for pumpId in range(initialSize + addNew):
+            if 'deviceMinTime' + str(pumpId) in qdict:
+                if pumpId < initialSize:
+                    settingsAdvancePumpTMP['PumpMinWorkingTime'][pumpId] = qdict['deviceMinTime' + str(pumpId)]
+                else:
+                    settingsAdvancePumpTMP['PumpMinWorkingTime'].append(qdict['deviceMinTime' + str(pumpId)])
+
         mutexAdvPump.acquire()
         settingsAdvancePump = copy.deepcopy(settingsAdvancePumpTMP)
         if len(settingsAdvancePump['PumpName']) > len(pumpsStateVect):
-            increase = [False] * (len(settingsAdvancePump['PumpName']) - len(pumpsStateVect))
+            sizeOfIncrementVect = len(settingsAdvancePump['PumpName']) - len(pumpsStateVect)
+
+            increase = [False] * sizeOfIncrementVect
             pumpsStateVect.extend(increase)
 
-            increase = [datetime.now()] * (len(settingsAdvancePump['PumpName']) - len(pumpsStateVect))
+            increase = [datetime.now()] * sizeOfIncrementVect
             lasTimeOnLine.extend(increase)
 
-            switchPumpStatus = [False] * (len(settingsAdvancePump['PumpName']) - len(pumpsStateVect))
-            switchPumpStatus.extend(switchPumpStatus)
+            increase = [False] * sizeOfIncrementVect
+            switchPumpStatus.extend(increase)
         elif len(settingsAdvancePump['PumpName']) < len(pumpsStateVect):
             pumpsStateVect = pumpsStateVect[:len(settingsAdvancePump['PumpName'])]
             lasTimeOnLine = lasTimeOnLine[:len(settingsAdvancePump['PumpName'])]
@@ -604,10 +645,12 @@ class pump_change_manual_state(ProtectedPage):
 
                 if qdict["ChangeStateState"] == 'on':
                     # send on signal
-                    pupmpAction(pumpType, pumpIP, True)
+                    #pupmpAction(pumpType, pumpIP, True)
+                    pass
                 elif qdict["ChangeStateState"] == 'off':
                     # send off signal
-                    pupmpAction(pumpType, pumpIP, False)
+                    #pupmpAction(pumpType, pumpIP, False)
+                    pass
 
                 if qdict["ChangeStateState"] == 'on' or qdict["ChangeStateState"] == 'off':
                     # check status
@@ -631,3 +674,17 @@ class pump_change_manual_state(ProtectedPage):
                     return '<button class="submit" onclick="sendPumpSwitchChange(\'on\', '+ str(idxPump) +')"><b>Turn Switch On</b></button>'
 
         return ""
+
+class pump_get_list(ProtectedPage):
+    """
+    change manual mode pumps states
+    """
+
+    def GET(self):
+        global settingsAdvancePump
+
+        mutexAdvPump.acquire()
+        y = json.dumps(settingsAdvancePump)
+        mutexAdvPump.release()
+
+        return y

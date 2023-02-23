@@ -116,7 +116,7 @@ $var page: advance_pump
 
                 <br /><br /><br />
 
-                Pump turn on if valve are on: <br /><br />
+                Pump turn on only if valve are on, need to flow wather: <br /><br />
 
                 $for bid in range(0,gv.sd['nbrd']):
                     $for s in range(0,8):
@@ -128,7 +128,7 @@ $var page: advance_pump
 
                 <br /><br /><br />
 
-                Valves in off state to turn on pump: <br /><br />
+                Pump turn on only if valve are off, need to flow wather: <br /><br />
 
                 $for bid in range(0,gv.sd['nbrd']):
                     $for s in range(0,8):
@@ -138,6 +138,17 @@ $var page: advance_pump
                         $else:
                             <input type="checkbox" id="valvesNeedPump${pumpId}Off${sid}" name="valvesNeedPump${pumpId}Off${sid}" value="valvesNeedPump${pumpId}Off${sid}">${gv.snames[sid]}
 
+                <br /><br />
+
+                $if pumpId < len(settings['PumpName']):
+                    Pump power: <input type="number" step="0.01" size="50" value="${settings['PumpPower'][pumpId]}" id="devicePower${pumpId}" name="devicePower${pumpId}">
+                $else:
+                    Pump power: <input type="number" step="0.01" size="50" value="" id="devicePower${pumpId}" name="devicePower${pumpId}">
+                <br /><br />
+                $if pumpId < len(settings['PumpName']):
+                    Minimum working time: <input type="time" size="50" value="${settings['PumpMinWorkingTime'][pumpId]}" id="deviceMinTime${pumpId}" name="deviceMinTime${pumpId}">
+                $else:
+                    Minimum working time: <input type="time" size="50" value="" id="deviceMinTime${pumpId}" name="deviceMinTime${pumpId}">
                 <br /><br />
         </form>
 
