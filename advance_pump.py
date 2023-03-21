@@ -47,7 +47,10 @@ gv.plugin_menu.append([_(u"Advance Pump"), u"/advance-pump-home"])
 
 settingsAdvancePump = {'PumpDBLog': True, 'PumpName': [], 'PumpDeviceType': [], 'PumpIP': [], 'PumpNeedValves': [], 'PumpNeedValvesOn': [], 'PumpNeedValvesOff': [], 'PumpKeepState': [], 'PumpPower': [], 'PumpMinWorkingTime': []}
 advancePumpManualMode = {}
+
 mutexAdvPump = Lock()
+threadMain = None
+isRuning = True
 
 def requestHTTP(commandURL):
     resposeIsOk = -1
@@ -110,7 +113,7 @@ def pupmpAction(deviceType : str, pumpIP : str, setState : bool):
     return resposeIsOk
 
 def runTreadPump():
-    global settingsAdvancePump, mutexAdvPump, pumpsStateVect, lasTimeOnLine, switchPumpStatus, advancePumpManualMode
+    global settingsAdvancePump, mutexAdvPump, pumpsStateVect, lasTimeOnLine, switchPumpStatus, advancePumpManualMode, isRuning
 
     mutexAdvPump.acquire()
     lastPupState = copy.deepcopy(pumpsStateVect)
@@ -128,7 +131,7 @@ def runTreadPump():
     else:
         dbDefinitions = {}
 
-    while True:
+    while isRuning:
         sleep(1)
         listPups2TurnOn = []
         listPups2TurnOff = []
@@ -265,7 +268,7 @@ def runTreadPump():
 
 # Read in the commands for this plugin from it's JSON file
 def load_advance_pump():
-    global settingsAdvancePump, mutexAdvPump, pumpsStateVect, lasTimeOnLine, switchPumpStatus
+    global settingsAdvancePump, mutexAdvPump, pumpsStateVect, lasTimeOnLine, switchPumpStatus, threadMain
 
     mutexAdvPump.acquire()
 
@@ -321,6 +324,15 @@ def on_zone_change_pump(name, **kw):
 
 zones = signal(u"zone_change")
 zones.connect(on_zone_change_pump)
+
+def restart_pump_clean_up(name, **kw):
+    global threadMain, isRuning
+    if threadMain != None and threadMain.is_alive():
+        isRuning = False
+        threadMain.join()
+
+rebootAction = signal(u"restarting")
+rebootAction.connect(restart_pump_clean_up)
 
 class home(ProtectedPage):
     """
